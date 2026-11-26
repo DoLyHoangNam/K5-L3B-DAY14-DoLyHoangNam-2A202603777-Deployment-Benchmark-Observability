@@ -469,9 +469,9 @@ Total messages: 10
 
 ### Exercise 3.1: Deploy Agent Part 6 (`06-lab-complete/`) lên Cloud
 
-- **Nền tảng sử dụng:** Railway (kèm dịch vụ Managed Redis được liên kết qua biến `REDIS_URL`).
-- **Thư mục deploy:** `06-lab-complete/` (sử dụng multi-stage `Dockerfile` và `railway.toml`).
-- **Public URL:** `https://k5-l3b-day14-dolyhoangnam-agent-production.up.railway.app` (chi tiết cấu hình và lệnh kiểm thử trong [DEPLOYMENT.md](DEPLOYMENT.md)).
+- **Nền tảng sử dụng:** Render (Web Service Docker + Render Key Value / Redis liên kết qua `REDIS_URL`).
+- **Thư mục deploy:** `06-lab-complete/` (sử dụng multi-stage `Dockerfile`).
+- **Public URL:** `https://k5-l3b-day14-dolyhoangnam-2a202603777.onrender.com` (chi tiết cấu hình và lệnh kiểm thử trong [DEPLOYMENT.md](DEPLOYMENT.md)).
 - **Screenshots:**
   - Dashboard: [`screenshots/dashboard.png`](screenshots/dashboard.png)
   - Service Running: [`screenshots/running.png`](screenshots/running.png)
