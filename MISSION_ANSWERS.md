@@ -462,3 +462,67 @@ Total messages: 10
   🎉 PASS 12/12 — PRODUCTION READY! Deploy nào!
 ================================================================
 ```
+
+---
+
+## Part 3: Cloud Deployment (CP6)
+
+### Exercise 3.1: Deploy Agent Part 6 (`06-lab-complete/`) lên Cloud
+
+- **Nền tảng sử dụng:** Railway (kèm dịch vụ Managed Redis được liên kết qua biến `REDIS_URL`).
+- **Thư mục deploy:** `06-lab-complete/` (sử dụng multi-stage `Dockerfile` và `railway.toml`).
+- **Public URL:** `https://k5-l3b-day14-dolyhoangnam-agent-production.up.railway.app` (chi tiết cấu hình và lệnh kiểm thử trong [DEPLOYMENT.md](DEPLOYMENT.md)).
+- **Screenshots:**
+  - Dashboard: [`screenshots/dashboard.png`](screenshots/dashboard.png)
+  - Service Running: [`screenshots/running.png`](screenshots/running.png)
+  - Test Results (4 lệnh tự kiểm `200`, `200`, `401`, `200`): [`screenshots/test.png`](screenshots/test.png)
+
+- **Kết quả chạy 4 lệnh tự kiểm ở CP6:**
+```bash
+$ curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/health"
+200
+$ curl -sS -o /dev/null -w '%{http_code}\n' "$BASE/ready"
+200
+$ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" -H 'Content-Type: application/json' -d '{"question":"Hello"}'
+401
+$ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/ask" -H 'Content-Type: application/json' -H "X-API-Key: $AGENT_API_KEY" -d '{"question":"Hello"}'
+200
+```
+
+---
+
+### Exercise 3.2: So sánh `railway.toml` với `render.yaml`
+
+| Tiêu chí | `railway.toml` (Railway) | `render.yaml` (Render Blueprint) | Tại sao có sự khác biệt? |
+|---|---|---|---|
+| **Định dạng & Phạm vi** | Định dạng **TOML**, cấu hình cho **1 service đơn lẻ** trong thư mục hiện tại (`[build]`, `[deploy]`). | Định dạng **YAML** (Infrastructure-as-Code Blueprint), khai báo được **nhiều services và databases** (web service, Redis, PostgreSQL...) trong cùng một file dưới danh sách `services:`. | Railway quản lý đa dịch vụ và biến môi trường trực tiếp trên Project Canvas/CLI, nên file `railway.toml` chỉ cần chỉ định cách build & chạy service đó; còn Render dùng Blueprint để đồng bộ toàn bộ kiến trúc stack từ Git. |
+| **Khai báo Build** | Dùng `builder = "DOCKERFILE"` (hoặc `NIXPACKS`/`RAILPACK`) và `dockerfilePath = "Dockerfile"`. | Khai báo `type: web` và `runtime: docker` (hoặc `runtime: python` kèm `buildCommand` và `startCommand`). | Railway mặc định tự nhận diện code qua Nixpacks nên cần cờ `builder = "DOCKERFILE"`, trong khi Render phân loại rõ `runtime` của từng `type` service. |
+| **Quản lý Biến môi trường & Secrets** | Không khai báo `envVars` trong `railway.toml`; mọi biến và secret được đặt qua lệnh `railway variables set` hoặc trên Dashboard để tránh lộ trong Git. | Hỗ trợ khai báo danh sách `envVars` ngay trong `render.yaml`: biến thường dùng `value: ...`, còn secret dùng **`generateValue: true`** (tự sinh ngẫu nhiên) hoặc **`sync: false`** (bắt buộc nhập tay trên Dashboard khi tạo Blueprint). | Render Blueprint hướng tới việc đóng gói cả schema biến môi trường vào IaC mà vẫn đảm bảo nguyên tắc 12-Factor không lưu plaintext secret vào Git. |
+| **Health Check & Restart Policy** | `healthcheckPath = "/health"`, `healthcheckTimeout = 30`, có `restartPolicyType = "ON_FAILURE"` và `restartPolicyMaxRetries = 3`. | `healthCheckPath: /health` (camelCase); cơ chế tự động restart khi container fail được nền tảng quản lý mặc định. | Cả hai đều gọi `GET /health` để xác nhận container mới đã sẵn sàng trước khi chuyển luồng traffic (Zero-Downtime Deployment). |
+
+---
+
+### Exercise 3.3: Phân tích CI/CD Pipeline của GCP Cloud Run (`03-cloud-deployment/production-cloud-run/`)
+
+Qua hai file `cloudbuild.yaml` và `service.yaml`, pipeline CI/CD tự động trên Google Cloud hoạt động qua **4 bước tuần tự** khi có commit mới được đẩy lên nhánh `main`:
+1. **Step 1 — Automated Testing (`id: test`)**: Khởi chạy container tạm `python:3.11-slim`, cài đặt `requirements.txt` cùng `pytest` và chạy bộ kiểm thử `pytest tests/ -v --tb=short`. Nếu bất kỳ test nào fail, toàn bộ pipeline dừng ngay lập tức, không build và không deploy.
+2. **Step 2 — Build Docker Image (`id: build`, `waitFor: [test]`)**: Dùng `gcr.io/cloud-builders/docker` để build image gắn 2 tag (`gcr.io/$PROJECT_ID/ai-agent:$COMMIT_SHA` để định danh chính xác phiên bản theo commit và `:latest`), đồng thời dùng `--cache-from` để tận dụng layer cache từ bản build trước.
+3. **Step 3 — Push lên Container Registry (`id: push`, `waitFor: [build]`)**: Đẩy image vừa build (`--all-tags`) lên Google Container Registry (`gcr.io/$PROJECT_ID/ai-agent`).
+4. **Step 4 — Deploy lên Cloud Run (`id: deploy`, `waitFor: [push]`)**: Dùng `gcloud run deploy` để triển khai image theo đúng tag `$COMMIT_SHA` lên vùng `asia-southeast1` với cấu hình production được định nghĩa đồng bộ trong `service.yaml` (Knative Service): tự động scale từ `minScale: 1` (tránh cold start) đến `maxScale: 10` (mỗi instance chịu tối đa `containerConcurrency: 80` với `1 CPU / 512Mi RAM`), nạp secret an toàn từ **Google Secret Manager** (`--set-secrets=OPENAI_API_KEY=openai-key:latest`, `secretKeyRef`) và kiểm tra sức khoẻ qua `startupProbe` (`/ready`) cùng `livenessProbe` (`/health`).
+
+---
+
+## AI Usage Log (Theo quy định tại `RULES.md`)
+
+1. **Tìm hiểu và tổng hợp kiến trúc 12-Factor & Docker Multi-stage (Part 1, Part 2, Part 5):**
+   - **Đã hỏi AI:** Giải thích chi tiết cơ chế Docker Layer Caching, sự khác biệt giữa `CMD` và `ENTRYPOINT`, cũng như lý do vì sao Liveness probe (`GET /health`) không được trả về `503` khi mất kết nối Redis.
+   - **Kết quả nhận được:** Giải thích lý thuyết về thứ tự invalidate layer trong Docker và nguy cơ cascading restart loop nếu `/health` phụ thuộc vào downstream service như Redis.
+   - **Tự sửa & tự kiểm tra:** Trực tiếp đọc mã nguồn `01-localhost-vs-production/`, `02-docker/`, `04-api-gateway/`, `05-scaling-reliability/`, tự build hai image `my-agent:develop` (1.15 GB) và `my-agent:advanced` (163 MB), chạy container thật và ghi lại đúng kết quả `curl -i` vào báo cáo.
+2. **Hoàn thiện mã nguồn Final Project trong `06-lab-complete/` (Part 6):**
+   - **Đã hỏi AI:** Cách viết custom `logging.Formatter` xuất JSON hợp lệ cho mọi dòng log của ứng dụng mà không làm hỏng log khi thông điệp truyền vào đã là chuỗi JSON, cách cài đặt Sliding Window Rate Limiter bằng Redis Sorted Set (`ZREMRANGEBYSCORE`, `ZCARD`, `ZADD`, `EXPIRE`), và cách bắt tín hiệu `SIGTERM` mà không ghi đè mất signal handler mặc định của Uvicorn.
+   - **Kết quả nhận được:** Mẫu code sử dụng `signal.getsignal(signal.SIGTERM)` lưu lại `_previous_sigterm` rồi gọi lại trong `_on_sigterm`, cùng cấu trúc multi-stage `Dockerfile` sử dụng `ENV PYTHONUSERBASE=/home/appuser/.local` cho user non-root `appuser`.
+   - **Tự sửa & tự kiểm tra:** Hoàn thiện 12 file trong `06-lab-complete/`, tự kiểm tra bằng `python check_production_ready.py` và kiểm chứng từng endpoint `/health`, `/ready`, `/ask` (401, 200, 429, 402).
+3. **Phân tích Tail Latency, Quality Gate và Observability Stack (Part 7):**
+   - **Đã hỏi AI:** Cách định nghĩa Prometheus `Histogram` cho độ dài câu hỏi (`agent_question_length_chars`) tránh bùng nổ cardinality, và cách viết entry bổ sung cho `KNOWLEDGE_BASE` để khắc phục 2 câu sai (`scaling-03`, `security-02`) trong `golden_dataset.jsonl`.
+   - **Kết quả nhận được:** Gợi ý các bucket `(20, 50, 100, 200, 500, 1000, 2000)` cho `Histogram` và 2 đoạn tài liệu về Kubernetes HPA cùng sự khác biệt giữa API Key và JWT.
+   - **Tự sửa & tự kiểm tra:** Thêm metric vào `develop/app.py`, cập nhật `KNOWLEDGE_BASE` trong `utils/mock_llm.py`, trực tiếp chạy `load_test.py` (7 kịch bản) và `eval/run_eval.py` (3 kịch bản) để sinh toàn bộ 10 file JSON thật trong `reports/`, kiểm tra `eval_v2_fixed.json` đạt `100.0% (23/23)` không có regression và đối chiếu khớp 100% số liệu vào `BENCHMARK_REPORT.md`.
