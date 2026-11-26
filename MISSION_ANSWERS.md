@@ -435,3 +435,30 @@ Total messages: 10
 - **Giải thích kết quả:**
   - Cả 5 request trong cùng một phiên hội thoại (`session_id`) được Nginx chia đều luân phiên qua cả 3 instance (`instance-a18f3c`, `instance-7d2e9b`, `instance-4c91e0`).
   - Khi gọi `GET /chat/{session_id}/history`, toàn bộ **10 messages** (5 cặp `user` + `assistant`) đều được bảo toàn đầy đủ theo đúng thứ tự thời gian vì mọi instance đều đọc/ghi chung vào Redis thay vì bộ nhớ cục bộ.
+
+---
+
+## Part 6: Final Project — `check_production_ready.py` Output
+
+Đã hoàn thiện toàn bộ 12 tiêu chí trong `06-lab-complete/` (`app/config.py`, `app/redis_client.py`, `app/auth.py`, `app/rate_limiter.py`, `app/cost_guard.py`, `app/main.py`, `Dockerfile`, `docker-compose.yml`, `.dockerignore`, `.env.example`, `railway.toml`, `render.yaml`).
+
+```text
+================================================================
+  📋 Checklist Deliverable
+     ✅ Dockerfile (multi-stage, < 500 MB)
+     ✅ docker-compose.yml (agent + redis)
+     ✅ .dockerignore
+     ✅ Health check endpoint (GET /health)
+     ✅ Readiness endpoint (GET /ready)
+     ✅ API Key authentication
+     ✅ Rate limiting
+     ✅ Cost guard
+     ✅ Config từ environment variables
+     ✅ Structured logging
+     ✅ Graceful shutdown
+     ✅ Public URL ready (Railway / Render config)
+----------------------------------------------------------------
+  Result: 12/12 tiêu chí đạt · 43/43 checks passed
+  🎉 PASS 12/12 — PRODUCTION READY! Deploy nào!
+================================================================
+```
